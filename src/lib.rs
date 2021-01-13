@@ -5,5 +5,5 @@ pub mod domain;
 pub mod in_memory_db;
 
 pub use domain::{
-    login, logout, register, EnteredPassword, LoginError, LogoutError, RegisterError, UserId,
+    db, login, logout, register, EnteredPassword, LoginError, LogoutError, RegisterError, UserId,
 };

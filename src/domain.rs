@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use self::db::{Db, DbError, DbResult};
 
-pub(crate) mod db;
+pub mod db;
 
 pub(crate) fn can_access_secret(db: &impl Db, user: &UserId) -> DbResult<bool> {
     db.has_session(&user)
