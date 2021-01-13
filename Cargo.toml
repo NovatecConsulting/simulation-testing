@@ -1,0 +1,25 @@
+[package]
+name = "model-testing"
+authors = ["'Timo Freiberg' <'timo.freiberg@gmail.com'>"]
+edition = "2018"
+version = "0.1.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1"
+async-std = {version = "1.8", features = ["attributes"]}
+base64 = "0.13"
+rust-argon2 = "0.8"
+sled = "0.34"
+thiserror = "1"
+tide = "0.15"
+uuid = { version = "0.8", features = ["v4"] }
+fail = "0.4"
+
+[dev-dependencies]
+quickcheck = "1"
+quickcheck_macros = "1"
+
+[profile.dev.package."*"]
+opt-level = 3
