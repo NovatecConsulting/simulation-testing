@@ -6,8 +6,8 @@ use self::db::{Db, DbError, DbResult};
 
 pub mod db;
 
-pub(crate) fn can_access_secret(db: &impl Db, user: &UserId) -> DbResult<bool> {
-    db.has_session(&user)
+pub fn can_access_secret(db: &impl Db, user_id: &UserId) -> DbResult<bool> {
+    db.has_session(&user_id)
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -22,20 +22,19 @@ pub enum LoginError {
     DbError(#[from] DbError),
 }
 
-pub fn login(db: &impl Db, auth_header: &str) -> Result<(), LoginError> {
+pub fn login(db: &impl Db, auth_header: &str) -> Result<bool, LoginError> {
     let (user_id, pw) = parse_auth(auth_header)?;
 
     let encoded = match db.get_pw(&user_id)? {
         Some(it) => it,
-        None => return Ok(()),
+        None => return Ok(false),
     };
     if encoded.verify(&pw)? {
         db.add_session(user_id)?;
+        Ok(true)
     } else {
-        return Err(LoginError::InvalidCredentials);
+        Err(LoginError::InvalidCredentials)
     }
-
-    Ok(())
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -90,10 +89,14 @@ impl EncodedPassword {
     }
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(PartialEq, Clone)]
+#[cfg_attr(test, derive(Debug))]
 pub struct EnteredPassword(String);
 
 impl EnteredPassword {
+    pub fn new(s: String) -> Self {
+        Self(s)
+    }
     pub fn encode(self) -> Result<EncodedPassword, argon2::Error> {
         let salt = Uuid::new_v4();
         let encoded = argon2::hash_encoded(
@@ -161,6 +164,21 @@ mod property_tests {
     fn cant_access_secret_without_logging_in(user: UserId) -> bool {
         let db = in_memory_db::init_db();
         !can_access_secret(&db, &user).unwrap()
+    }
+
+    #[quickcheck]
+    fn cant_login_without_registering(user: UserId, pass: EnteredPassword) -> bool {
+        let header = auth_header(&user, &pass);
+        let db = in_memory_db::init_db();
+        !login(&db, &header).unwrap()
+    }
+
+    #[quickcheck]
+    fn can_login_after_registering(user: UserId, pass: EnteredPassword) -> bool {
+        let header = auth_header(&user, &pass);
+        let db = in_memory_db::init_db();
+        register(&db, user.clone(), pass.clone()).unwrap();
+        login(&db, &header).unwrap()
     }
 
     #[quickcheck]
