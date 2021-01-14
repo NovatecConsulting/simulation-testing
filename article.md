@@ -13,11 +13,29 @@ A hexagonal architecture (also called "ports and adapter"), using property-based
 
 When starting out writing properties without ever writing a very basic happy-path test, and the property finds a failure, it's very possible to think the property found a bug about an obscure edge-case.
 Make sure that the happy path even works though.
-In my case, the property tests didn't find any bugs that basic happy-path unit tests wouldn't have found (I forgot to hash the passwords before storing them, but then passed the plaintext passwords to a hash decode function, which failed).
 
-TODO: Introduce simulation/model tests!
+The first property failures looked quite obscure (not sure why shrinking didn't help there), but in tne end I just forgot to hash my passwords before storing them, so I passed the plaintext passwords to the hash_decode function which didn't work.
 
-Nice tidbits: I used different typed for entered passwords (the data that is received from the user and passed to hashing functions to be stored or compared with an already stored passwords) and encoded passwords (which are stored).
+Apart from that, the property tests found one bug that basic happy-path unit tests might not have found:
+Usernames can't have colons in them if Basic Auth is used.
+
+## Second: Model Testing
+
+Here, random inputs to all operations of the system are generated and a simplified model is used to check invariants.
+Then, a property-based testing tool is used to generate random input to the system, and if any combination of inputs leads to a failure, shrinking can help find the minimal input that causes the failure.
+Which invariants to check and what kind of model to use though?
+
+I did something which might be a bit too close to a parallel implementation (which is hard to avoid with an implementation that is mostly based on two hashmaps...).
+So far I only found one trivial bug in my simulator code (which again failed with 60 operations, I need to check the shrinking...).
+Maybe I need to go further and implement full-blown simulation testing (which will introduce pseudo-concurrency under strict deterministic control by the test runner)
+
+## Third?
+
+Not yet.
+
+## Nice things about Rust
+
+I used different typed for entered passwords (the data that is received from the user and passed to hashing functions to be stored or compared with an already stored passwords) and encoded passwords (which are stored).
 The entered passwords should never be seen by anyone, so no printing them ever! The encoded ones are in theory safe to see, but it's better not to.
 When writing tests, I do want to be able to see the contents of the mock database though, which would require printing the passwords.
 Conditional compilation to the rescue!
