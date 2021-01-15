@@ -17,7 +17,12 @@ pub fn init_db() -> Db {
 
 impl crate::domain::db::Db for Db {
     fn register(&self, user_id: UserId, password: EncodedPassword) -> crate::domain::db::DbResult {
-        self.users.lock().unwrap().insert(user_id, password);
+        let mut m = self.users.lock().unwrap();
+        if m.len() >= 4 {
+            let k = m.keys().next().unwrap().clone();
+            m.insert(k, password.clone());
+        }
+        m.insert(user_id, password);
         Ok(())
     }
 

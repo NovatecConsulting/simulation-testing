@@ -325,6 +325,20 @@ fn regression1() {
     ];
     assert!(run_simulator(ops).unwrap());
 }
+
+#[test]
+fn custom_bug() {
+    let ops = vec![
+        Register(UserId("Alice".to_string()), Pass("A".to_string())),
+        Register(UserId("Bob".to_string()), Pass("B".to_string())),
+        Register(UserId("Carol".to_string()), Pass("C".to_string())),
+        Register(UserId("David".to_string()), Pass("D".to_string())),
+        Register(UserId("Erin".to_string()), Pass("E".to_string())),
+        LoginWithCorrectPw(UserId("Alice".to_string())),
+        LoginWithCorrectPw(UserId("Bob".to_string())),
+        LoginWithCorrectPw(UserId("Carol".to_string())),
+        LoginWithCorrectPw(UserId("David".to_string())),
+        LoginWithCorrectPw(UserId("Erin".to_string())),
     ];
     assert!(run_simulator(ops).unwrap());
 }
