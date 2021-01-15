@@ -26,6 +26,8 @@ enum Op {
     Fail(String),
 }
 
+use Op::*;
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct UserName(String);
 
@@ -168,14 +170,16 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
         // eprintln!("Handling Op {:?}", op);
         match op {
             Op::Register(user_id, pass) => {
-                match register(&db, user_id.clone(), pass.entered_password()) {
-                    Ok(()) => {
-                        not_registered.remove(&user_id);
-                        registered.insert(user_id, pass);
-                    }
-                    Err(e) => {
-                        assert_failpoint_err(e)?;
-                        not_registered.insert(user_id);
+                if !registered.contains_key(&user_id) {
+                    match register(&db, user_id.clone(), pass.entered_password()) {
+                        Ok(()) => {
+                            not_registered.remove(&user_id);
+                            registered.insert(user_id, pass);
+                        }
+                        Err(e) => {
+                            assert_failpoint_err(e)?;
+                            not_registered.insert(user_id);
+                        }
                     }
                 }
             }
@@ -183,11 +187,8 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
                 if let Some(pass) = registered.get(&user_id) {
                     let auth_header = auth_header(&user_id, &pass);
                     match login(&db, &auth_header) {
-                        Ok(true) => {
+                        Ok(()) => {
                             sessions.insert(user_id);
-                        }
-                        Ok(false) => {
-                            return Ok(false);
                         }
                         Err(e) => {
                             assert_failpoint_err(e)?;
@@ -200,7 +201,7 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
                 let wrong_pw = Pass("hunter2".to_string());
                 let auth_header = auth_header(&user_id, &wrong_pw);
                 match registered.get(&user_id) {
-                    Some(existing_pw) => match login(&db, &auth_header) {
+                    Some(_existing_pw) => match login(&db, &auth_header) {
                         Ok(_) => return Ok(false),
                         Err(LoginError::InvalidCredentials) => {}
                         Err(e) => {
@@ -208,8 +209,8 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
                         }
                     },
                     None => match login(&db, &auth_header) {
-                        Ok(true) => return Ok(false),
-                        Ok(false) => {}
+                        Ok(()) => return Ok(false),
+                        Err(LoginError::NotRegistered) => {}
                         Err(e) => {
                             assert_failpoint_err(e)?;
                         }
@@ -223,7 +224,9 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
                     .unwrap_or(Pass("hunter2".to_string()));
                 let auth_header = auth_header(&user_id, &pass);
                 match logout(&db, &auth_header) {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        sessions.remove(&user_id);
+                    }
                     Err(e) => {
                         assert_failpoint_err(e)?;
                     }
@@ -244,14 +247,61 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
             }
         }
 
-        for (registered, pass) in &registered {
-            if not_registered.contains(&registered) {
-                bail!("{:?} in registered and unregistered at once", registered);
+        for (user_id, pass) in &registered {
+            if not_registered.contains(&user_id) {
+                bail!("{:?} in registered and unregistered at once", user_id);
+            }
+            let auth_header = auth_header(user_id, pass);
+            if sessions.contains(user_id) {
+                match logout(&db, &auth_header) {
+                    Ok(()) => {
+                        if let Err(e) = login(&db, &auth_header) {
+                            assert_failpoint_err(e)?;
+                            sessions.remove(user_id);
+                        }
+                    }
+                    Err(e) => {
+                        assert_failpoint_err(e)?;
+                    }
+                }
+            } else {
+                match can_access_secret(&db, user_id) {
+                    Ok(true) => {
+                        bail!("{:?} has no session but can access secret", user_id);
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        assert_failpoint_err(e)?;
+                    }
+                }
+                match login(&db, &auth_header) {
+                    Ok(()) => {
+                        if let Err(e) = logout(&db, &auth_header) {
+                            assert_failpoint_err(e)?;
+                            sessions.insert(user_id.clone());
+                        }
+                    }
+                    Err(e) => {
+                        assert_failpoint_err(e)?;
+                    }
+                }
             }
         }
         for session in &sessions {
             if no_session.contains(&session) {
-                bail!("{:?} in session and no_session at once");
+                bail!("{:?} in session and no_session at once", session);
+            }
+            if !registered.contains_key(session) {
+                bail!("{:?} in session but not registered", session);
+            }
+            match can_access_secret(&db, session) {
+                Ok(true) => {}
+                Ok(false) => {
+                    bail!("{:?} in session but can't access secret", session);
+                }
+                Err(e) => {
+                    assert_failpoint_err(e)?;
+                }
             }
         }
     }
@@ -265,69 +315,16 @@ fn simulate_login(ops: Vec<Op>) -> anyhow::Result<bool> {
 
 #[test]
 fn regression1() {
-    use Op::*;
     let ops = vec![
-        LoginWithCorrectPw(UserId("Kate".to_string())),
-        AccessSecret(UserId("Jacob".to_string())),
-        Register(UserId("Paul".to_string()), Pass("+_".to_string())),
-        Fail("db.get_pw".to_string()),
-        LoginWithWrongPw(UserId("Zachary".to_string())),
-        Register(UserId("Vincent".to_string()), Pass("\u{fd203}".to_string())),
-        AccessSecret(UserId("Ursula".to_string())),
-        Register(UserId("Xavier".to_string()), Pass("큓\\↑¦⁞".to_string())),
-        Logout(UserId("Isabelle".to_string())),
-        Fail("db.remove_session".to_string()),
-        LoginWithCorrectPw(UserId("Jacob".to_string())),
-        Fail("db.get_pw".to_string()),
-        LoginWithCorrectPw(UserId("Larry".to_string())),
-        LoginWithWrongPw(UserId("Kate".to_string())),
-        Fail("db.remove_session".to_string()),
-        Register(UserId("Kate".to_string()), Pass("¤-\u{7818d}".to_string())),
-        LoginWithCorrectPw(UserId("Ursula".to_string())),
-        Register(
-            UserId("Robert".to_string()),
-            Pass("`※\u{fff7}(]~\"\u{603}®뇆=;嵂;G¥£".to_string()),
-        ),
-        LoginWithWrongPw(UserId("Greta".to_string())),
-        Logout(UserId("Olivia".to_string())),
         Register(
             UserId("Greta".to_string()),
             Pass("D1—\u{10fffd}5".to_string()),
         ),
-        AccessSecret(UserId("Ursula".to_string())),
-        AccessSecret(UserId("Noah".to_string())),
-        Fail("db.remove_session".to_string()),
-        Register(UserId("Carol".to_string()), Pass("ue\u{601}".to_string())),
-        Fail("db.get_pw".to_string()),
-        LoginWithCorrectPw(UserId("Olivia".to_string())),
-        AccessSecret(UserId("Paul".to_string())),
-        LoginWithWrongPw(UserId("Xavier".to_string())),
-        AccessSecret(UserId("Thomas".to_string())),
-        Logout(UserId("Jacob".to_string())),
-        Logout(UserId("Olivia".to_string())),
-        Fail("db.remove_session".to_string()),
-        Logout(UserId("Alice".to_string())),
-        Logout(UserId("Quinn".to_string())),
-        LoginWithWrongPw(UserId("Carol".to_string())),
-        Register(
-            UserId("Isabelle".to_string()),
-            Pass("?\u{90d5b}\u{ad}".to_string()),
-        ),
         Fail("db.register".to_string()),
-        LoginWithWrongPw(UserId("Yvonne".to_string())),
-        LoginWithCorrectPw(UserId("Quinn".to_string())),
         Register(UserId("Greta".to_string()), Pass("T".to_string())),
-        LoginWithCorrectPw(UserId("Quinn".to_string())),
-        Logout(UserId("Kate".to_string())),
-        LoginWithWrongPw(UserId("Frank".to_string())),
-        AccessSecret(UserId("Paul".to_string())),
-        LoginWithCorrectPw(UserId("Zachary".to_string())),
-        Register(
-            UserId("Wanda".to_string()),
-            Pass("0\u{ac89d}\u{205f}~".to_string()),
-        ),
-        LoginWithWrongPw(UserId("Susan".to_string())),
-        LoginWithCorrectPw(UserId("Robert".to_string())),
+    ];
+    assert!(run_simulator(ops).unwrap());
+}
     ];
     assert!(run_simulator(ops).unwrap());
 }

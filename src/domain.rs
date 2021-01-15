@@ -20,18 +20,20 @@ pub enum LoginError {
     ParseAuthError(#[from] ParseAuthError),
     #[error("{0}")]
     DbError(#[from] DbError),
+    #[error("Not registered")]
+    NotRegistered,
 }
 
-pub fn login(db: &impl Db, auth_header: &str) -> Result<bool, LoginError> {
+pub fn login(db: &impl Db, auth_header: &str) -> Result<(), LoginError> {
     let (user_id, pw) = parse_auth(auth_header)?;
 
     let encoded = match db.get_pw(&user_id)? {
         Some(it) => it,
-        None => return Ok(false),
+        None => return Err(LoginError::NotRegistered),
     };
     if encoded.verify(&pw)? {
         db.add_session(user_id)?;
-        Ok(true)
+        Ok(())
     } else {
         Err(LoginError::InvalidCredentials)
     }
@@ -170,7 +172,7 @@ mod property_tests {
     fn cant_login_without_registering(user: UserId, pass: EnteredPassword) -> bool {
         let header = auth_header(&user, &pass);
         let db = in_memory_db::init_db();
-        !login(&db, &header).unwrap()
+        matches!(login(&db, &header), Err(LoginError::NotRegistered))
     }
 
     #[quickcheck]
@@ -178,7 +180,7 @@ mod property_tests {
         let header = auth_header(&user, &pass);
         let db = in_memory_db::init_db();
         register(&db, user.clone(), pass.clone()).unwrap();
-        login(&db, &header).unwrap()
+        login(&db, &header).unwrap() == ()
     }
 
     #[quickcheck]
