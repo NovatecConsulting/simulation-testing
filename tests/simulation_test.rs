@@ -32,9 +32,10 @@ use Op::*;
 struct UserName(String);
 
 const TEST_USERS: &[&str] = &[
-    "Alice", "Bob", "Carol", "David", "Erin", "Frank", "Greta", "Holger", "Isabelle", "Jacob",
-    "Kate", "Larry", "Margaret", "Noah", "Olivia", "Paul", "Quinn", "Robert", "Susan", "Thomas",
-    "Ursula", "Vincent", "Wanda", "Xavier", "Yvonne", "Zachary",
+    "Alice", "Bob", "Carol", "David", "Erin", "Frank"
+    // , "Greta", "Holger", "Isabelle", "Jacob",
+    // "Kate", "Larry", "Margaret", "Noah", "Olivia", "Paul", "Quinn", "Robert", "Susan", "Thomas",
+    // "Ursula", "Vincent", "Wanda", "Xavier", "Yvonne", "Zachary",
 ];
 
 impl Arbitrary for UserName {
@@ -279,6 +280,7 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
                         if let Err(e) = logout(&db, &auth_header) {
                             assert_failpoint_err(e)?;
                             sessions.insert(user_id.clone());
+                            no_session.remove(user_id);
                         }
                     }
                     Err(e) => {
@@ -310,7 +312,8 @@ fn run_simulator(ops: Vec<Op>) -> anyhow::Result<bool> {
 
 #[quickcheck]
 fn simulate_login(ops: Vec<Op>) -> anyhow::Result<bool> {
-    run_simulator(ops)
+    eprintln!("Called with {} Ops {:?}", ops.len(), ops);
+    dbg!(run_simulator(ops))
 }
 
 #[test]
