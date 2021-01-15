@@ -1,6 +1,7 @@
 # Trying out simulation testing
 
 The plan is to try out Simulation Testing/Model Testing to see how hard it is to get going and how it compares to less esoteric testing.
+
 Resources:
 * https://sled.rs/simulation.html
 * https://www.youtube.com/watch?v=4fFDFbi3toc
@@ -32,11 +33,12 @@ Tests look like this:
 ```
 
 When starting out writing properties without ever writing a very basic happy-path test, and the property finds a failure, it's very possible to think the property found a bug about an obscure edge-case.
-Make sure that the happy path even works though.
+
+_Make sure that the happy path even works though._
 
 The first property failures looked quite obscure (not sure why shrinking didn't help there), but in the end I just forgot to hash my passwords before storing them, so I passed the plaintext passwords to the hash_decode function which didn't work.
 
-Apart from that, the property tests found one bug that basic happy-path unit tests might not have found:
+Apart from that, the property tests found one bug that basic happy-path unit tests might not have found:  
 Usernames can't have colons in them if Basic Auth is used.
 
 ## Second: Model Testing
@@ -67,7 +69,8 @@ Maybe I need to go further and implement full-blown simulation testing...
 
 I also tried to test the bug-finding powers by introducing a semi-obscure bug - overwriting the password of an existing user with the password of a new user.
 I started off only overwriting existing passwords after the 16th user, which the simulation didn't hit once after trying out 10 or 20 times.
-I guess this is to be expected though.
+I guess this is to be expected though, given the limited length of generated input and the search space.
+
 After changing the bug to nearly always modifying another user's password, the simulation finds it more often than not (although not always).
 The shrinking results often contain garbage, maybe it would help to use a `Vec`-wrapper that uses the same `arbitrary` definition but exhaustively searches sublists.
 Might be worth a try.
